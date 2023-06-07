@@ -332,4 +332,15 @@ public interface Speficiation<T>{
 - 메서드 이름에 OrderBy 사용해서 정렬 기준 지정
 - Sort를 인자로 전달.
 
+## 페이징 처리하기 
+- Sort타입과 마찬가지로 find메서드에 Pageable 타입 파라미터를 사용하면 페이징을 자동 처리해줌.
+- Pageable을 사용하는 메서드의 리턴타입이 Page일 경우 
+- -> 스프링 데이터 JPA는 목록 조회 쿼리와 함꼐 COUNT 쿼리도 실행해서 조건에 해당하는 데이터 개수를 구함. 
+- findBy프로퍼티 형식메서드에서 Pageable을 파라미터로 사용하더라도 리턴타입이 List면 COUNT쿼리 실행 X
+- spec을 사용하는 finaAll에 Pageable을 사용하면 리턴 타입이 Page가 아니더라도 COUNT 쿼리 실행됨.
 
+## 하이버네이트 @Subselect 사용
+- @Immutable, @Subselect, @Synchronize는 하이버네이트 전용 애너테이션으로, 이 태그를 사용하면 테이블이 아닌 쿼리 결과를 @Entity로 매핑할 수 있음.
+- @Subselect는 조회 쿼리를 값으로 갖는다. select 쿼리의 결과를 매핑할 테이블처럼 사용한다. 
+- @Immutable -> 뷰를 수정할 수 없듯 @Subselect로 조회한 @Entity 역시 수정 불가. -> 실질적인 매핑 테이블이 없으므로 에러발생
+- @Synchronize -> 엔티티를 로딩하기 전에 지정한 테이블과 관련된 변경이 발생하면 플러시. 
