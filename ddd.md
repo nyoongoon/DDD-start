@@ -334,7 +334,7 @@ public interface Speficiation<T>{
 
 ## 페이징 처리하기 
 - Sort타입과 마찬가지로 find메서드에 Pageable 타입 파라미터를 사용하면 페이징을 자동 처리해줌.
-- Pageable을 사용하는 메서드의 리턴타입이 Page일 경우 
+- Pageable을 사용하는 메서드의 리턴타입이 Pagge일 경우 
 - -> 스프링 데이터 JPA는 목록 조회 쿼리와 함꼐 COUNT 쿼리도 실행해서 조건에 해당하는 데이터 개수를 구함. 
 - findBy프로퍼티 형식메서드에서 Pageable을 파라미터로 사용하더라도 리턴타입이 List면 COUNT쿼리 실행 X
 - spec을 사용하는 finaAll에 Pageable을 사용하면 리턴 타입이 Page가 아니더라도 COUNT 쿼리 실행됨.
