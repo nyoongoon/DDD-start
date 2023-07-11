@@ -440,6 +440,8 @@ public interface Speficiation<T> {
 - @Immutable -> 뷰를 수정할 수 없듯 @Subselect로 조회한 @Entity 역시 수정 불가. -> 실질적인 매핑 테이블이 없으므로 에러발생
 - @Synchronize -> 엔티티를 로딩하기 전에 지정한 테이블과 관련된 변경이 발생하면 플러시.
 
+
+
 # 응용 서비스와 표현 영역
 
 ## 응용 서비스의 역할
@@ -502,7 +504,170 @@ public class ChangePasswordService {
 - 각 클래스별로 필요한 의존 객체만 포함하므로 다른 기능을 구현한 코드에 영향 받지 않음
 - -> 각 기능마다 동일한 로직을 구현할 경우 여러 클래스에 중복해서 동일한 코드를 구현할 가능성이 있음
 - 이 경우 다음과 같이 클래스에 로직을 구현해서 코드 중복되는 것을 방지 가능
+- 
+```java
+// 각 응용 서비스에서 공통되는 로직을 별도 클래스로 구현
+public final class MemberServiceHelper{
+    public static Member findExistingMember(MemberRepository repo, String memberId){
+        Member member = memberRepository.findById(memberID);
+        if(member == null){
+            throw new NoMemberException(memberId);
+        }
+        return member;
+    }
+}
 ```
+```java
+import static com.myshop.member.application.MemberServiceHelper.*;
+
+public class ChangePasswordService{
+    private MemberRepository memberRepository;
+    
+    public void changePassword(String memberId, String curPw, String newPw){
+        Member member = findExisitingMember(memberRepository, memberId);
+        member.changePassword(curPw, newPw);
+    }
+}
+```
+
+### 응용 서비스의 인터페이스와 클래스
+- 응용 서비스를 구현할 때 논쟁이 될만한 것이 인터페이스가 필요한 지이다. 다음과 같이 인터페이스를 만들고 이를 상속한 클래스를 만드는 것이 필요할까?
+```java
+public interface ChangePasswordService{
+    public void changePassword(String memberId, String curPw, String newPw);
+}
+public class ChangePasswordServiceImpl implements ChangePasswordService{
+    //... 구현
+}
+```
+- 인터페이스가 필요한 상황 중 하나는 구현클래스가 여러개인 것. -> 런타임에 교체하는 것은 드움
+- -> **인터페이스가 명확하게 필요하기 전까지 응용 서비스에 대한 인터페이스를 작성하는 것이 좋은 선택이라고 볼 수 없음**
+- -> TDD를 하고 표현영역부터 개발한다면 응용서비스의 인터페이스를 이용해서 컨트롤러 구현을 완성해나갈 수 있음
+- -> Mockoto와 같은 테스트 도구는 클래스에 대해서도 테스트용 대역 객체를 만들 수 있음. 
+
+### 메서드 파라미터와 값 리턴
+- 응용서비스가 제공하는 메서드는 모데인을 이용해서 사용자가 요구한 기능을 실행하는데 필요한 값을 파라미터로 전달받아야한다
+- 응용서비스에 데이터로 전달할 요청 **파라미터가 두개 이상 존재하면 별도 DTO 클래스를 사용**하는 것이 편리하다. 
+- 값 리턴 : 응용 서비스에서 애그리거트 자체를 리턴하면 편할 수 있지만 **도메인 로직 실행을 응용 서비스와 표현 서비스 두곳에서 할 수 있게 됨**
+- -> 이것은 기능 실행 로직을 응용 서비스와 표현 영역에 분산시켜 코드의 응집도를 낮추는 원인이 됨.
+
+### 표현 영역에 의존하지 않기
+- 응용 서비스의 파라미터 타입을 결정할 떄 주의할 점 -> 표현 영역과 관련된 타입을 사용하면 안됨!
+- ex) 표현영역에 해당하는 HttpServletRequest나 HttpSession을 응용 서비스에 파라미터로 전달하면 안됨!
+```java
+@Controller
+@RequestMapping("/member/changePassword")
+public class MemberPasswordController{
+  @PostMapping
+  public String submit(HttpServletRequest request){
+      changePasswordService.changePassword(request);
+  } 
+}
+```
+- 응용 서비스에서 표현영역에 대한 의존이 발생하면 응용서비스만 단독으로 테스트하기가 어려워짐
+- 표현영역의 구현이 변경되면 응용서비스의 구현도 함께 변경해야하는 문제 발생
+- -> 더 심각한 것은 응용 서비스가 표현영역의 역할까지 대신하는 상황이 벌어질 수도 있음
+```java
+public class AuthenticationService{
+    public void authentication(HttpServletRequest request){
+        //...
+      HttpSession session = request.getSession();
+      session.setAttribute("auth", new Authentication(id));
+    }
+}
+```
+- HttpSession이나 쿠키는 표현영역의 상태에 해당하는데 이 상태를 응용서비스에서 변경해버리면 
+- -> 표현영역의 코드만으로 표현영역의 상태가 어떻게 변경되는지 추적하기 어려워짐. -> 표현영역의 응집도가 깨지는 것
+- -> 파라미터와 리턴타입으로 표현영역의 구현기술을 사용하지 않는 것이 중요!
+
+### 트랜잭션 처리
+- ** 트랜잭션을 관리하는 것은 응용 서비스**의 중요한 역할 !!
+
+
+## 표현영역 
+- 표현 영역의 책임은 크게 3가지
+- 1. 사용자가 시스템을 사용할 수 있는 **흐름(링크/화면)을 제공하고 제어**
+- 2. 사용자의 요청을 알맞은 응용 서비스에 **전달하고 결과를 사용자에게 제공** (결과 알맞은 형식으로 변환 및 에러코드에 알맞은 처리)
+- 3. 사용자의 **세션을 관리**
+
+- 표현영역의 주된 역할 중 하나는 사용자의 연결 상태인 세션을 관리하는 것
+- 웹은 쿠키나 서버 세션을 이용해서 사용자의 연결상태를 관리 -> 권한 검사와 연결되는 내용...
+
+## 값 검증 
+- 값 검증은 표현영역과 응용 서비스 두 곳에서 모두 수행할 수 있다. 
+- -> 원칙적으로 모든 값에 대한 검증은 응용서비스에서 처리한다. 
+- 예를 들어 회원가입을 처리하는 응용서비스는 파라미터로 전달받은 값이 올바른지 검사해야한다. 
+- 표현영역은 잘못된 값이 존재하면 이를 사용자에게 알려주고 값을 다시 입력받아야 한다.
+- 스프링 MVC는 폼에 입력한 값이 잘못된 경우 에러메시지를 보여주기 위해 Errors나 BindingResult를 사용하는데
+- -> 컨트롤러에서 위와 같은 응용서비스를 사용하면 폼에 에러메시지를 보여주기 위해 다음과 같이 다소 번잡한 코드를 작성해야함.
+- -> 응용서비스에서 각 값이 유효한지 확인할 목적으로 익셉션을 사용하면 사용자 경험이 좋지 않음(입력 폼 재입력)
+- -> 응용서비스에서 값을 검사하는 시점에 첫번째 값이 올바르지 않아 예외를 발생시키면 나머지 항목에 대해 검증하지 못함
+- ->-> 이런 불편을 해서 하기 위해 **응용서비스에서 에러코드를 모아 하나의 익셉션을오 발생**시키는 방법이 있음
+```java
+public class ExampleService {
+  @Transactional
+  public OrderNo placeOrder(OrderRequest orderRequest){
+    List<ValidationError> errors = new ArrayList<>();
+    if(orderRequest == null) {
+        errors.add(ValidationError.of("empty"));
+    }else{
+        //...
+    }
+    // 응용서비스가 입력 오류를 하나의 익셉션으로 모아서 발생
+    if(!errors.isEmpty()) throw new ValidationErrorException(errors);
+  }    
+}
+```
+- 표현영역은 응용서비스가 ValidationErrorException을 발생시키면  
+- ->익셉션에서 에러 목록을 가져와 표현영역에 사용할 형태로 변환처리한다.
+```java
+public class ExampleController{
+    @PostMapping("/orders/order")
+    public String order(@ModelAttribute("orderReq") OrderRequest orderRequest, 
+                        BindingResult bindingResult,
+                        ModelMap modelMap){
+        User user = (User) SecurityContextHolder.getContext()
+                .getAuthentication().getPrincipal();
+        orderRequest.setOrdererMemberId(MemberId.of(user.getUsername()));
+        try{
+            OrderNo orderNo = placeOrderService.placeOrder(orderRequest);
+            modelMap.addAttribute("orderNo", orderNo.getNumber());
+        }catch(ValidationErrorException e){
+          // 응용 서비스가 발생키신 검증 에러 목록을
+          // 뷰에서 사용할 형태로 변환
+          e.getErrors().forEach(err->{
+              if(err.hasName()){
+                  bindingReesult.rejectValue(err.getName(), err.getCode());
+              }else{
+                  bindingResult.reject(err.getCode());
+              }
+          });
+          populateProductsModel(orderRequest, modelMap);
+          return "order/confirm";
+        }
+    }
+}
+```
+
+- 표현영역에서 필수 값을 검증하는 방법도 있다.
+- 스프링은 값 검증을 위한 Validator 인터페이스를 별도로 제공하므로 검증기를 따로 구현하면 간결하게 작성할 수 있음
+```java
+public class ExampleController{
+    @PostMapping("/member/join")
+    public String join(JoinRequest joinRequest, Errors errors){
+        new JoinRequestValidater().validate(joinRequest, errors);
+        if(errors.hasErrors()) return formView;
+        try{
+            joinService.join(joinRequest);
+            return successView;
+        }catch (DuplicateIdException ex){
+            errors.rejectValue(ex.getPropertyName(), "duplicate");
+            return formView;
+        }
+    }
+}
+```
+<<<<<<< HEAD
 public final class Me
 ```
 
@@ -550,3 +715,19 @@ public final class Me
 
 
 cf) 래빗 MQ는 글로벌 트랜잭션을 지원
+=======
+- 표현영역에서 필수값과 값의 형식을 검사하면 실질적으로 응용서비스는 ID 중복 여부와 같은 논리적 오류만 검사할 수도 있음
+- -> 응용서비스에서 값 검증을 모두 처리하면 작성코드는 늘어나지만  응용서비스의 완성도가 높아지는 장점도 있음
+- 결) 표현, 응용에서 각각 역할별로 검증할 수 있으나, 응용에서 모두 검증하면 완성도가 높아짐.
+
+## 권한 검사
+- 보통 다음 세 곳에서 권한 검사를 수행할 수 있음
+- 표현 영역
+- 응용 서비스
+- 도메인
+
+### 표현 영역에서의 권한 검사
+- 표현 영역에서 할 수 있는 기본적인 검사는 인증된 사용자인이 아닌지 검사하는 것
+- ex) 회원 정보 변경 -> 회원 정보 변경과 관련된 URL은 인증된 사용자만 접근해야함.
+- -> 이런 접근 제어를 하기 좋은 위치가 **서블릿 필터** -> 서블릿 필터에서 인증 정보를 생성, 인증 여부를 검사
+>>>>>>> 22f907927b1e8d8f31e3c63ad4c9307234e1e011
